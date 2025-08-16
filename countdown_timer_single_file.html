@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Persistent Countdown</title>
+  <style>
+    :root{
+      --bg: #0f1220; --fg:#e7e9ee; --card:#171a2b; --muted:#9aa3b2; --accent:#7c5cff;
+      --ok:#2ecc71; --warn:#f1c40f; --danger:#e74c3c; --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    @media (prefers-color-scheme: light){
+      :root{ --bg:#f6f8fb; --fg:#0f1220; --card:#ffffff; --muted:#5b6473; --accent:#5a48ff; --shadow: 0 8px 20px rgba(16,24,40,.08); }
+    }
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:20px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;display:grid;place-items:center}
+    .wrap{width:min(1600px,98vw);}
+    .card{background:var(--card);border-radius:32px;box-shadow:var(--shadow);padding:40px}
+    h1{margin:0 0 10px;font-weight:800;letter-spacing:.4px;font-size:2.8rem}
+    p.lead{margin:0 0 20px;color:var(--muted);font-size:1.2rem}
+    .row{display:grid;grid-template-columns:1fr;gap:24px}
+    @media (min-width:720px){.row{grid-template-columns:2fr 1fr}}
+    .panel{background:linear-gradient(180deg,transparent,rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06);border-radius:24px;padding:28px}
+    label{font-size:1rem;color:var(--muted)}
+    input[type="datetime-local"], input[type="text"]{width:100%;padding:16px 18px;border-radius:16px;border:1px solid rgba(0,0,0,.15);background:#fff;color:#111;outline: none;font-size:1.1rem}
+    .btns{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px}
+    button{appearance:none;border:0;border-radius:16px;padding:14px 20px;font-weight:700;cursor:pointer;box-shadow:var(--shadow);font-size:1.1rem}
+    .primary{background:var(--accent);color:white}
+    .ghost{background:transparent;color:var(--fg);border:1px solid rgba(255,255,255,.15)}
+    .danger{background:var(--danger);color:white}
+    .grid{display:flex;flex-direction:column;gap:28px} /* vertical au lieu de côte à côte */
+    .tile{background:rgba(124,92,255,.12);border:1px solid rgba(124,92,255,.35);border-radius:20px;padding:36px;text-align:center}
+    .tile h2{margin:0;font-size:3rem}
+    .tile small{display:block;color:var(--muted);font-size:1.2rem}
+    .meta{margin-top:18px;color:var(--muted);font-size:1.2rem}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--danger)}
+    .footer{margin-top:24px;color:var(--muted);font-size:1rem}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:14px 18px;border-radius:12px;opacity:0;transition:opacity .4s ease;font-size:1rem}
+    .toast.show{opacity:1}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Persistent Countdown</h1>
+      <p class="lead">Start = now. Choose your <strong>end date</strong> once and I'll remember it next time you launch.</p>
+      <div class="row">
+        <div class="panel">
+          <label for="title">Optional label</label>
+          <input id="title" type="text" placeholder="e.g., 'Exam D‑Day', 'Project Go‑Live'" />
+          <div style="height:12px"></div>
+          <label for="end">End date & time</label>
+          <input id="end" type="datetime-local" />
+          <div class="btns">
+            <button class="primary" id="save">Save target</button>
+            <button class="ghost" id="now">Set to end of today</button>
+            <button class="danger" id="clear">Clear saved target</button>
+          </div>
+          <div class="meta" id="savedMeta"></div>
+        </div>
+        <div class="panel">
+          <div class="grid">
+            <div class="tile"><h2 id="months">—</h2><small>months left (≈)</small></div>
+            <div class="tile"><h2 id="weeks">—</h2><small>weeks left</small></div>
+            <div class="tile"><h2 id="days">—</h2><small>days left</small></div>
+            <div class="tile"><h2 id="hours">—</h2><small>hours left</small></div>
+          </div>
+          <div class="meta" id="detail">—</div>
+        </div>
+      </div>
+      <div class="footer">Months are an approximation using the average month length (30.44 days). The live totals update every second.
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite">Saved!</div>
+  <script>
+    const KEY = 'myCountdown.targetISO';
+    const KEY_TITLE = 'myCountdown.title';
+
+    const el = id => document.getElementById(id);
+    const monthsAvgDays = 365.2425 / 12; // 30.44
+
+    function showToast(msg){
+      const t = el('toast');
+      t.textContent = msg; t.classList.add('show');
+      setTimeout(()=>t.classList.remove('show'), 1800);
+    }
+
+    function save(){
+      const val = el('end').value;
+      if(!val){ showToast('Pick a date/time first'); return; }
+      localStorage.setItem(KEY, new Date(val).toISOString());
+      localStorage.setItem(KEY_TITLE, el('title').value || '');
+      updateSavedMeta();
+      showToast('Saved!');
+    }
+
+    function clearSaved(){
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(KEY_TITLE);
+      updateSavedMeta();
+      showToast('Cleared');
+    }
+
+    function updateSavedMeta(){
+      const iso = localStorage.getItem(KEY);
+      const title = localStorage.getItem(KEY_TITLE) || '';
+      const meta = iso ? `Saved target${title?` • ${title}`:''}: ${new Date(iso).toLocaleString()}` : 'No saved target yet.';
+      el('savedMeta').textContent = meta;
+      if(iso){
+        // Pre-fill inputs
+        const dt = new Date(iso);
+        el('end').value = localToLocalInput(dt);
+        el('title').value = title;
+      }
+    }
+
+    function localToLocalInput(d){
+      const tzOff = d.getTimezoneOffset();
+      const local = new Date(d.getTime() - tzOff*60000);
+      return local.toISOString().slice(0,16); // yyyy-mm-ddThh:mm
+    }
+
+    function setEndOfToday(){
+      const d = new Date();
+      d.setHours(23,59,59,999);
+      el('end').value = localToLocalInput(d);
+    }
+
+    function tick(){
+      const iso = localStorage.getItem(KEY);
+      const targetStr = el('end').value || iso;
+      if(!targetStr){
+        el('detail').textContent = 'Pick and save an end date to start the countdown.';
+        ['months','weeks','days','hours'].forEach(id=>el(id).textContent='—');
+        return;
+      }
+      const target = new Date(targetStr);
+      const now = new Date();
+      const ms = target - now;
+      if(ms <= 0){
+        el('detail').innerHTML = '<span class="bad">Time\'s up!</span>';
+        ['months','weeks','days','hours'].forEach(id=>el(id).textContent='0');
+        return;
+      }
+      const secs = ms/1000;
+      const hours = secs/3600;
+      const days = secs/86400;
+      const weeks = days/7;
+      const months = days/monthsAvgDays;
+
+      el('hours').textContent = Math.floor(hours).toLocaleString();
+      el('days').textContent = days.toFixed(2);
+      el('weeks').textContent = weeks.toFixed(2);
+      el('months').textContent = months.toFixed(2);
+
+      const dLeft = Math.floor(days);
+      const hLeft = Math.floor((days - dLeft) * 24);
+      const mLeft = Math.floor((hours - Math.floor(hours)) * 60);
+      const sLeft = Math.floor(secs % 60);
+      el('detail').textContent = `${dLeft} days, ${hLeft} h, ${mLeft} min, ${sLeft} s remaining`;
+    }
+
+    // Wire up
+    el('save').addEventListener('click', save);
+    el('clear').addEventListener('click', clearSaved);
+    el('now').addEventListener('click', setEndOfToday);
+
+    updateSavedMeta();
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>
